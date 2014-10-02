@@ -1,3 +1,6 @@
+window.onerror = function(e, url, line) {
+    alert(e+'\n'+line+'\n'+url);
+}
 
 var KEYCODE_A = 65;
 var KEYCODE_S = 83;
@@ -7,6 +10,48 @@ var KEYCODE_W = 87;
 var posneg = function() {
     return game.rnd.integerInRange(0,10) > 5 ? -1 : 1;
 };
+
+var touch_joystick = {
+    sprite: null,
+    init: function(game, coords, sprite_id) {
+        this.sprite = game.add.sprite(coords.x, coords.y, sprite_id);
+        this.sprite.inputEnabled = true;
+        this.sprite.input.disableDrag();
+        this.last_used_pointer = null;
+        this.pointers = [
+            game.input.pointer1,
+            game.input.pointer2
+        ];
+    },
+    get_active_pointer: function() {
+        if (this.last_used_pointer && this.sprite.input.checkPointerDown(this.last_used_pointer)) {
+            return this.last_used_pointer;
+        } else { 
+            for (var i = 0; i < this.pointers.length; i++) {
+                if (this.sprite.input.checkPointerDown(this.pointers[i])) {
+                    this.last_used_pointer = this.pointers[i];
+                    return this.last_used_pointer;
+                }
+            }
+            return null;
+        }
+    },
+    coords: function() {
+        if (this.sprite) {
+            var pointer = this.get_active_pointer();
+            if (pointer) {
+                return {
+                    x: (this.sprite.input.pointerX(pointer.id) - (this.sprite.width / 2)) / (this.sprite.width / 2),
+                    y: (this.sprite.input.pointerY(pointer.id) - (this.sprite.height / 2)) / (this.sprite.height / 2)
+                };
+            }
+        }
+        return {
+            x: null,
+            y: null
+        };
+    }
+}
 
 /*** Enemy Definitions! ***/
 var enemy_controller = {
@@ -117,27 +162,34 @@ var main = {
     shot_cooldown: 165,
     next_shot: 0,
     last_frame_time: 0,
-    accelerate: function(body, dimension) {
+    fullscreen: false,
+    accelerate: function(body, dimension, amount) {
+        if (amount === undefined) {
+            amount = this.player_acceleration;
+        };
         if (body.velocity[dimension] < this.max_player_speed) {
-            if (this.max_player_speed - body.velocity[dimension] > this.player_acceleration) {
-                body.velocity[dimension] += this.player_acceleration;
+            if (this.max_player_speed - body.velocity[dimension] > amount) {
+                body.velocity[dimension] += amount;
             } else {
                 body.velocity[dimension] = this.max_player_speed;
             }      
         }
     },
-    decelerate: function(body, dimension) {
+    decelerate: function(body, dimension, amount) {
+        if (amount === undefined) {
+            amount = this.player_acceleration;
+        }
         if (body.velocity[dimension] > (this.max_player_speed * -1)) {
-            if ((this.max_player_speed * -1) < body.velocity[dimension] - this.player_acceleration) {
-                body.velocity[dimension] -= this.player_acceleration;
+            if ((this.max_player_speed * -1) < body.velocity[dimension] - amount) {
+                body.velocity[dimension] -= amount;
             } else {
                 body.velocity[dimension] = this.max_player_speed * -1;
             }
         }
     },
-    shoot: function() {
+    shoot: function(x, y) {
         
-        if (this.player.alive) {
+        if (this.player.alive && game.time.now > this.next_shot) {
             if (this.projectiles.countDead() > 0) {
                 var pew = this.projectiles.getFirstDead();
                 pew.reset(this.player.x, this.player.y);
@@ -149,29 +201,40 @@ var main = {
                 this.projectiles.add(pew);
                 game.physics.enable(pew, Phaser.Physics.ARCADE);
 
-                pew.emitter = game.add.emitter(pew.x, pew.y, 100);
-                pew.emitter.gravity = 0;
-                pew.emitter.maxParticleSpeed.x = 30;
-                pew.emitter.maxParticleSpeed.y = 30;
-               
-                pew.emitter.makeParticles(['particle1', 'particle2']);    
+                if (!game.device.android) {
+                    pew.emitter = game.add.emitter(pew.x, pew.y, 100);
+                    pew.emitter.gravity = 0;
+                    pew.emitter.maxParticleSpeed.x = 30;
+                    pew.emitter.maxParticleSpeed.y = 30;
+
+                    pew.emitter.makeParticles(['particle1', 'particle2']);    
+                }
             }
 
                 
-            pew.emitter.start(false, 250, 0, 0, false);
+            if (!game.device.android) { 
+            
+                pew.emitter.start(false, 250, 0, 0, false);
 
-            pew.events.onKilled.addOnce(function() {
-                pew.emitter.kill();
-                pew.emitter.forEachAlive(function(particle) {
-                    particle.kill(); // According to the docs this should not be necessary
+                pew.events.onKilled.addOnce(function() {
+                    pew.emitter.kill();
+                    pew.emitter.forEachAlive(function(particle) {
+                        particle.kill(); // According to the docs this should not be necessary
+                    });
                 });
-            });
+                
+                pew.events.onDestroy.addOnce(function() {
+                    pew.emitter.destroy(true);
+                })
+                
+                game.physics.arcade.moveToPointer(pew, 300);
+            } else {
+                var x = this.player.x + (x * 20);
+                var y = this.player.y + (y * 20);
+                game.physics.arcade.moveToXY(pew, x, y, 300);
+            }
 
-            pew.events.onDestroy.addOnce(function() {
-                pew.emitter.destroy(true);
-            })
-
-            game.physics.arcade.moveToPointer(pew, 300);
+            
             this.next_shot = game.time.now + this.shot_cooldown;
         }
     },
@@ -259,8 +322,20 @@ var main = {
         
         game.load.spritesheet('enemy5', 'assets/enemy_sheet.png', 20, 20);
         game.load.spritesheet('enemy6', 'assets/greensheet.png', 10, 10);
+        
+        game.load.image('touch_circle','assets/control_circle.png');
     },
     create: function() {
+        // Mobile controls
+        if (game.device.android) {
+            this.joystick_left = Object.create(touch_joystick);
+            this.joystick_left.init(game, {x: 0, y: 300}, 'touch_circle');
+        
+        
+            this.joystick_right = Object.create(touch_joystick);
+            this.joystick_right.init(game, {x: 650, y: 300}, 'touch_circle');
+        }
+
         // Entity groups
         this.projectiles = game.add.group();
         this.enemies_by_type = {};
@@ -284,6 +359,7 @@ var main = {
         
         this.fps_text = game.add.text(10, 10, 'FPS: 0', text_style);
         this.score_text = game.add.text(10, 28, 'Score: 0', text_style);
+        
     },
     reset: function() {
         for (var type in this.enemies_by_type) {
@@ -304,6 +380,10 @@ var main = {
         
         this.player.reset(200, 200);
     },
+    go_fullscreen: function() {
+        game.scale.fullScreenScaleMode = Phaser.ScaleManager.SHOW_ALL;
+        game.scale.startFullScreen(false);
+    },
     update: function() {
         this.fps_text.text = 'FPS: '+game.time.fps;
         this.score_text.text = 'Score: '+this.kills;
@@ -311,35 +391,56 @@ var main = {
         var _this = this;
         // Move emitters
         
-        this.projectiles.forEachAlive(function(pew) {
-            pew.emitter.x = pew.x;
-            pew.emitter.y = pew.y;
-        });
         
         
-        // Process Input
-        if (game.input.activePointer.isDown) {
-            if (game.time.now > this.next_shot) {
+        if (game.device.android) {
+            // process mobile controls
+            var left_joystick_coords = this.joystick_left.coords();
+            var right_joystick_coords = this.joystick_right.coords();
+           
+            for (var axis in left_joystick_coords) {
+                if (left_joystick_coords[axis] !== null) {
+                    if (left_joystick_coords[axis] > 0) {
+                        this.accelerate(this.player.body, axis, this.player_acceleration * left_joystick_coords[axis]);
+                    } else {
+                        
+                        this.decelerate(this.player.body, axis, this.player_acceleration * Math.abs(left_joystick_coords[axis]));
+                    }
+                }
+            }
+            
+            if (right_joystick_coords.x !== null) {
+                this.shoot(right_joystick_coords.x, right_joystick_coords.y);
+            }
+        } else {
+            
+            this.projectiles.forEachAlive(function(pew) {
+                pew.emitter.x = pew.x;
+                pew.emitter.y = pew.y;
+            });
+            // Process Input
+            if (game.input.activePointer.isDown) {
+                
                 this.shoot();
+                
+            }
+
+            if (game.input.keyboard.isDown(KEYCODE_A)) {
+                this.decelerate(this.player.body, 'x');
+            }
+
+            if (game.input.keyboard.isDown(KEYCODE_D)) {
+                this.accelerate(this.player.body, 'x');
+            }
+
+            if (game.input.keyboard.isDown(KEYCODE_S)) {
+                this.accelerate(this.player.body, 'y');
+            }
+
+            if (game.input.keyboard.isDown(KEYCODE_W)) {
+                this.decelerate(this.player.body, 'y');
             }
         }
-        
-        if (game.input.keyboard.isDown(KEYCODE_A)) {
-            this.decelerate(this.player.body, 'x');
-        }
-        
-        if (game.input.keyboard.isDown(KEYCODE_D)) {
-            this.accelerate(this.player.body, 'x');
-        }
-        
-        if (game.input.keyboard.isDown(KEYCODE_S)) {
-            this.accelerate(this.player.body, 'y');
-        }
-        
-        if (game.input.keyboard.isDown(KEYCODE_W)) {
-            this.decelerate(this.player.body, 'y');
-        }
-        
         
         var frame_delta = game.time.now - this.last_frame_time;
         var frames = frame_delta / (1000 / 60); // Pretending 60fps
@@ -388,6 +489,14 @@ var main = {
     }
 };
 
-var game = new Phaser.Game(800, 450, Phaser.AUTO, 'gameDiv');
-game.state.add('main', main);
-game.state.start('main');
+var game;
+
+window.onload = function() {
+    document.getElementById('my_fullscreen').onclick = function() {
+        main.go_fullscreen();
+    };
+
+    game = new Phaser.Game(800, 450, Phaser.AUTO, 'gameDiv');
+    game.state.add('main', main);
+    game.state.start('main');
+}
