@@ -11,68 +11,10 @@ var posneg = function() {
     return game.rnd.integerInRange(0,10) > 5 ? -1 : 1;
 };
 
-var touch_joystick = {
-    sprite: null,
-    init: function(game, coords, sprite_id) {
-        this.sprite = game.add.sprite(coords.x, coords.y, sprite_id);
-        this.sprite.inputEnabled = true;
-        this.sprite.input.disableDrag();
-        this.last_used_pointer = null;
-        this.pointers = [
-            game.input.pointer1,
-            game.input.pointer2
-        ];
-    },
-    get_active_pointer: function() {
-        if (this.last_used_pointer && this.sprite.input.checkPointerDown(this.last_used_pointer)) {
-            return this.last_used_pointer;
-        } else { 
-            for (var i = 0; i < this.pointers.length; i++) {
-                if (this.sprite.input.checkPointerDown(this.pointers[i])) {
-                    this.last_used_pointer = this.pointers[i];
-                    return this.last_used_pointer;
-                }
-            }
-            return null;
-        }
-    },
-    coords: function() {
-        if (this.sprite) {
-            var pointer = this.get_active_pointer();
-            if (pointer) {
-                return {
-                    x: (this.sprite.input.pointerX(pointer.id) - (this.sprite.width / 2)) / (this.sprite.width / 2),
-                    y: (this.sprite.input.pointerY(pointer.id) - (this.sprite.height / 2)) / (this.sprite.height / 2)
-                };
-            }
-        }
-        return {
-            x: null,
-            y: null
-        };
-    }
-}
+
 
 /*** Enemy Definitions! ***/
-var enemy_controller = {
-    type: 'base',
-    point_value: 1,
-    rotation: 25,
-    control_interval: 1000,
-    next_control: 0,
-    spritelist: ['enemy1','enemy2','enemy3',],
-    init: function(sprite) {
-        game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,800), game.rnd.integerInRange(0,450), 100);
-    },
-    behavior: function(sprite) {
-        if (game.rnd.integerInRange(0, 100) < 35) {
-            game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,800), game.rnd.integerInRange(0,450), 100);
-        }
-    }
-};
 
-
-                 
 var curver_controller = Object.create(enemy_controller);
 
 curver_controller.type = 'curver';
@@ -106,6 +48,17 @@ curver_controller.behavior = function(sprite) {
     }
 };
 
+var enemy1_controller = Object.create(enemy_controller);
+enemy1_controller.type = 'enemy1';
+enemy1_controller.point_value = 1;
+enemy1_controller.spritelist = ['enemy1', 'enemy2'];
+
+enemy1_controller.init = function(sprite) {
+    sprite.animations.add('throb', null, 10, true);
+    sprite.play('throb');
+    game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,800), game.rnd.integerInRange(0,450), 100);
+}
+
 var enemy2_controller = Object.create(enemy_controller);
 
 enemy2_controller.type = 'enemy2';
@@ -114,7 +67,7 @@ enemy2_controller.spritelist = ['enemy5'];
 enemy2_controller.rotation = 15;
 enemy2_controller.init = function(sprite) {
     sprite.animations.add('throb', null, 10, true);
-    sprite.play('throb')
+    sprite.play('throb');
     game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,800), game.rnd.integerInRange(0,450), 100);
 };
 
@@ -132,15 +85,15 @@ enemy2_controller.behavior = function(sprite) {
 
 var spawn_thresholds = {
     0: {
-        enemies: ['base'],
+        enemies: ['enemy1'],
         bonuses: []
     },
     10: {
-        enemies: ['base', 'animated'],
+        enemies: ['enemy1', 'animated'],
         bonuses: []
     },
     25: {
-        enemies: ['base', 'animated', 'curver']
+        enemies: ['enemy1', 'animated', 'curver']
     },
     50: {
         enemies: ['animated', 'curver']
@@ -148,7 +101,7 @@ var spawn_thresholds = {
 };
 
 var enemy_types = {
-    'base': enemy_controller,
+    'enemy1': enemy1_controller,
     'animated': enemy2_controller,
     'curver': curver_controller
 };
@@ -315,10 +268,12 @@ var main = {
         game.load.image('redparticle', 'assets/redparticle.png');
         game.load.image('yellowparticle', 'assets/yellowparticle.png');
         game.load.image('orangeparticle', 'assets/orangeparticle.png');
-        game.load.image('enemy1', 'assets/enemy1.png');
-        game.load.image('enemy2', 'assets/enemy2.png');
+        
         game.load.image('enemy3', 'assets/enemy3.png');
         game.load.image('enemy4', 'assets/enemy4.png');
+        
+        game.load.spritesheet('enemy1', 'assets/enemy1_new.png', 16, 16);
+        game.load.spritesheet('enemy2', 'assets/enemy2_new.png', 16, 16);
         
         game.load.spritesheet('enemy5', 'assets/enemy_sheet.png', 20, 20);
         game.load.spritesheet('enemy6', 'assets/greensheet.png', 10, 10);
@@ -326,6 +281,8 @@ var main = {
         game.load.image('touch_circle','assets/control_circle.png');
     },
     create: function() {
+        highscores.init();
+        
         // Mobile controls
         if (game.device.android) {
             this.joystick_left = Object.create(touch_joystick);
@@ -352,7 +309,7 @@ var main = {
         this.player.body.collideWorldBounds = true;
         
         var text_style = {
-            'font': "14px 'Paytone One'",
+            'font': "14px Arial",
             'fill': 'white',
             'align': 'left'
         };
@@ -361,7 +318,10 @@ var main = {
         this.score_text = game.add.text(10, 28, 'Score: 0', text_style);
         
     },
-    reset: function() {
+    is_game_over: false,
+    game_over: function() {
+        
+        this.is_game_over = true;
         for (var type in this.enemies_by_type) {
             this.enemies_by_type[type].destroy(true);
             delete this.enemies_by_type[type];
@@ -369,6 +329,27 @@ var main = {
         
         this.projectiles.destroy(true);
         this.explosions.destroy(true);
+        
+        highscores.update(this.score);
+        highscores.render_scores(game);
+        
+        var text_style = {
+            'font': "14px Arial",
+            'fill': 'blue',
+            'align': 'left'
+        };
+        this.retry = game.add.text(250, 400, 'Retry', text_style);
+
+        this.retry.inputEnabled = true;
+        
+        this.retry.input.start();
+        
+    },
+    reset: function() {
+        highscores.clear();
+        this.is_game_over = false;
+        
+        this.retry.destroy();
         
         this.projectiles = game.add.group();
         this.explosions = game.add.group();
@@ -385,8 +366,15 @@ var main = {
         game.scale.startFullScreen(false);
     },
     update: function() {
+        if (this.is_game_over) {
+            if (this.retry.input.pointerDown(game.input.activePointer.id)) {
+                this.reset();
+            }
+            return;
+        }
+        
         this.fps_text.text = 'FPS: '+game.time.fps;
-        this.score_text.text = 'Score: '+this.kills;
+        this.score_text.text = 'Score: '+this.score;
         
         var _this = this;
         // Move emitters
@@ -401,10 +389,10 @@ var main = {
             for (var axis in left_joystick_coords) {
                 if (left_joystick_coords[axis] !== null) {
                     if (left_joystick_coords[axis] > 0) {
-                        this.accelerate(this.player.body, axis, this.player_acceleration * left_joystick_coords[axis]);
+                        this.accelerate(this.player.body, axis, this.player_acceleration * left_joystick_coords[axis] * 1.5);
                     } else {
                         
-                        this.decelerate(this.player.body, axis, this.player_acceleration * Math.abs(left_joystick_coords[axis]));
+                        this.decelerate(this.player.body, axis, this.player_acceleration * Math.abs(left_joystick_coords[axis]) * 1.5);
                     }
                 }
             }
@@ -460,7 +448,7 @@ var main = {
                 _this.player.kill();
                 _this.explode_at(_this.player.x, _this.player.y);
                 game.time.events.add(1000, function() {
-                    _this.reset();
+                    _this.game_over();
                 });
             });
             
