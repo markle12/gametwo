@@ -45,19 +45,25 @@ var touch_joystick = {
 
 // Enemy Controller
 var enemy_controller = {
+    health: 1,
     type: 'base',
     point_value: 1,
     rotation: 25,
     control_interval: 1000,
     next_control: 0,
-    spritelist: ['enemy1','enemy2','enemy3',],
+    centerx: 0.5,
+    centery: 0.5,
+    spritelist: ['enemy1','enemy2'],
     init: function(sprite) {
-        game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,800), game.rnd.integerInRange(0,450), 100);
+        game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,GAME_WIDTH), game.rnd.integerInRange(0,GAME_HEIGHT), 100);
     },
     behavior: function(sprite) {
         if (game.rnd.integerInRange(0, 100) < 35) {
-            game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,800), game.rnd.integerInRange(0,450), 100);
+            game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,GAME_WIDTH), game.rnd.integerInRange(0,GAME_HEIGHT), 100);
         }
+    },
+    onkill: function(sprite) {
+        
     }
 };
                  
