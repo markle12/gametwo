@@ -4,8 +4,8 @@ var KEYCODE_A = 65;
 var KEYCODE_S = 83;
 var KEYCODE_D = 68;
 var KEYCODE_W = 87;
-var GAME_WIDTH = 800;
-var GAME_HEIGHT = 450;
+var GAME_WIDTH = 1200;
+var GAME_HEIGHT = 675;
 
 var extend = function(base, extension) {
     var new_obj = Object.create(base);
@@ -23,7 +23,7 @@ require.config({
 });
 
 require(['Phaser','Components'], function(Phaser, Components) {
-    console.log(arguments);
+    
     var posneg = function() {
         return game.rnd.integerInRange(0,10) > 5 ? -1 : 1;
     };
@@ -33,7 +33,8 @@ require(['Phaser','Components'], function(Phaser, Components) {
         property: null,
         increment: 0,
         player_effect: null,
-        sprite: null
+        sprite: null,
+        destroy_on_impact: true
     };
 
     var shot_damage_powerup = {
@@ -43,9 +44,9 @@ require(['Phaser','Components'], function(Phaser, Components) {
         sprite: 'bluearrow'
     };
 
-    var max_speed_powerup = {
-        property: 'max_player_speed',
-        increment: 5,
+    var shot_speed_powerup = {
+        property: 'shot_speed',
+        increment: 50,
         player_effect: 'player_effect_yellow',
         sprite: 'yellowarrow'
     };
@@ -56,11 +57,19 @@ require(['Phaser','Components'], function(Phaser, Components) {
         player_effect: 'player_effect_green',
         sprite: 'greenarrow'
     };
+    
+    var shield_powerup = {
+        property: 'shield_points',
+        increment: 1,
+        player_effect: 'player_effect_shield',
+        sprite: 'shield_icon'
+    };
 
     var powerup_types = [
         shot_damage_powerup,
-        max_speed_powerup,
-        accel_powerup
+        shot_speed_powerup,
+        accel_powerup,
+        shield_powerup
     ];
     
     var enemies_setup = function() {
@@ -171,6 +180,70 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 }
             }
         });
+        
+        enemies.centipede_part = extend(components.enemy_controller, {
+            type: 'centipede_part',
+            spritelist: ['centipede_part'],
+            control_interval: 50,
+            max_per_axis: 200,
+            current_axis: 'x',
+            increment: 10,
+            last_switch: 0,
+            init: function(sprite, init_options) {
+                this.animation = sprite.animations.add('throb', null, 10, true);
+                sprite.play('throb');
+                
+                if (init_options === undefined) {   
+                    this.is_follow = false;
+                }
+                else
+                {
+                    this.is_follow = init_options.is_follow;
+                    this.following = init_options.following;
+                    this.animation.setFrame(init_options.setframe, true);
+                    
+                }
+                
+                if (!this.is_follow) {
+                    var segments = game.rnd.integerInRange(3, 8);
+                    var x_spread = game.rnd.integerInRange(5, 10) * posneg();
+                    var y_spread = game.rnd.integerInRange(5, 10) * posneg();
+                    
+                    var prev_sprite;
+                    for (var i = 0; i < segments; i++) {
+                        var follow = i == 0 ? sprite : prev_sprite;
+                        
+                        var new_part = main.create_enemy('centipede_part', follow.x + x_spread, follow.y + y_spread, {
+                            is_follow: true,
+                            following: follow,
+                            setframe: i
+                        });
+                        
+                        prev_sprite = new_part;
+                    }
+                }
+            },
+            behavior: function(sprite) {
+                if (this.is_follow) {
+                    if (this.following.alive) {
+                        var speed = game.physics.arcade.distanceBetween(sprite, this.following) * 4;
+                        game.physics.arcade.moveToObject(sprite, this.following, speed);
+                    } else {
+                        this.is_follow = false;
+                    }
+                } else {
+                    if (Math.abs(sprite.body.velocity[this.current_axis]) >= this.max_per_axis || game.time.now - this.last_switch > 3000) {
+                        this.current_axis = game.rnd.integerInRange(0,100) > 50 ? 'x' : 'y';
+                        this.increment = 10 * posneg();
+                        sprite.body.velocity.x = game.rnd.integerInRange(50,100) * posneg();
+                        sprite.body.velocity.y = game.rnd.integerInRange(50,100) * posneg();
+                        this.last_switch = game.time.now;
+                    } else {
+                        sprite.body.velocity[this.current_axis] += this.increment;
+                    }
+                }
+            }
+        });
         return enemies;
     };
     
@@ -187,7 +260,10 @@ require(['Phaser','Components'], function(Phaser, Components) {
             enemies: ['enemy1', 'enemy2', 'curver']
         },
         50: {
-            enemies: ['enemy2', 'curver', 'bigenemy']
+            enemies: ['enemy2', 'curver', 'centipede_part']
+        },
+        80: {
+            enemies: ['enemy2', 'centipede_part', 'bigenemy']
         }
     };
     
@@ -197,12 +273,14 @@ require(['Phaser','Components'], function(Phaser, Components) {
         kills: 0,
         score: 0,
         shot_damage: 1,
-        max_player_speed: 120,
+        max_player_speed: 150,
         player_acceleration: 5,
         shot_cooldown: 165,
         next_shot: 0,
+        shot_speed: 350,
         last_frame_time: 0,
         fullscreen: false,
+        shield_points: 0,
         accelerate: function(body, dimension, amount) {
             if (amount === undefined) {
                 amount = this.player_acceleration;
@@ -267,11 +345,11 @@ require(['Phaser','Components'], function(Phaser, Components) {
                         pew.emitter.destroy(true);
                     })
 
-                    game.physics.arcade.moveToPointer(pew, 300);
+                    game.physics.arcade.moveToPointer(pew, this.shot_speed);
                 } else {
                     var x = this.player.x + (x * 20);
                     var y = this.player.y + (y * 20);
-                    game.physics.arcade.moveToXY(pew, x, y, 300);
+                    game.physics.arcade.moveToXY(pew, x, y, this.shot_speed);
                 }
 
 
@@ -288,7 +366,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
             var type = powerup_types[game.rnd.integerInRange(0,powerup_types.length-1)];
             this.create_powerup(type, game.rnd.integerInRange(0, GAME_WIDTH), game.rnd.integerInRange(0, GAME_HEIGHT));    
         },
-        create_enemy: function(type, x, y) {
+        create_enemy: function(type, x, y, init_options) {
             var _this = this;
             // do check recycle in this.enemies_by_type
             if (this.enemies_by_type[type] !== undefined && this.enemies_by_type[type].countDead() > 0) {
@@ -320,10 +398,13 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 enemy.x = game.rnd.integerInRange(0, GAME_WIDTH);
                 enemy.y = game.rnd.integerInRange(0, GAME_HEIGHT);
             }
+            
+            enemy.body.bounce = 0.8;
 
-            enemy.controller.init(enemy);
+            enemy.controller.init(enemy, init_options);
             enemy.controller.behavior(enemy);
             enemy.controller.next_control = game.time.now + enemy.controller.control_interval;
+            return enemy;
         },
         random_spawn: function() {
             var _this = this;
@@ -385,9 +466,12 @@ require(['Phaser','Components'], function(Phaser, Components) {
             game.load.image('bluearrow', 'assets/bluearrow.png');
             game.load.image('greenarrow', 'assets/greenarrow.png');
             game.load.image('yellowarrow', 'assets/yellowarrow.png');
+            game.load.image('shield_icon', 'assets/shield_icon.png');
             game.load.image('player_effect_blue', 'assets/bluespriteeffect.png');
             game.load.image('player_effect_green', 'assets/greenspriteeffect.png');
             game.load.image('player_effect_yellow', 'assets/yellowspriteeffect.png');
+            game.load.image('player_effect_shield', 'assets/shield.png');
+            
 
             game.load.image('splitdude','assets/split_dude.png');
 
@@ -397,6 +481,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
             game.load.spritesheet('enemy5', 'assets/enemy_sheet.png', 20, 20);
             game.load.spritesheet('enemy6', 'assets/greensheet.png', 10, 10);
             game.load.spritesheet('bigenemy', 'assets/bigenemy_sheet.png', 35, 35);
+            game.load.spritesheet('centipede_part','assets/centipede_sheet.png', 20, 20);
 
             game.load.image('touch_circle','assets/control_circle.png');
         },
@@ -435,6 +520,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
             game.physics.enable(this.player, Phaser.Physics.ARCADE);
             this.player.body.collideWorldBounds = true;
+            this.player.body.bounce = 1;
 
             var text_style = {
                 'font': "14px Arial",
@@ -517,6 +603,84 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
 
 
+            
+
+            var frame_delta = game.time.now - this.last_frame_time;
+            var frames = frame_delta / (1000 / 60); // Pretending 60fps
+
+            this.player.angle += 15 * frames;
+
+            this.player_effects.forEach(function(effect) {
+                effect.x = _this.player.x;
+                effect.y = _this.player.y;
+                effect.angle += 20 * frames;
+            });
+
+            Object.keys(this.enemies_by_type).forEach(function(type) {
+                // Collide stuff
+                game.physics.arcade.collide(_this.projectiles, _this.enemies_by_type[type], function(projectile, enemy) {
+                    projectile.kill();
+                    _this.explode_at(enemy.x, enemy.y);
+
+                    enemy.damage(_this.shot_damage);
+                });
+
+                game.physics.arcade.collide(_this.player, _this.enemies_by_type[type], function(player, enemy) {
+                    if (_this.player.alive) {
+                        if (_this.shield_points < 1) {
+                            _this.player.kill();
+                            _this.explode_at(_this.player.x, _this.player.y);
+                            game.time.events.add(1000, function() {
+                                _this.game_over();
+                            });
+                        } else {
+                            _this.shield_points -= 1;
+                            var breakloop = false;
+                            _this.player_effects.forEachAlive(function(effect) {
+                                if (!breakloop && effect.spritename == 'player_effect_shield') {
+                                    effect.kill();
+                                    breakloop = true;
+                                }
+                            });
+                        }
+                    }
+                });
+
+                _this.enemies_by_type[type].forEachAlive(function(enemy) {
+                    enemy.angle += enemy.controller.rotation * frames;
+                    if (game.time.now >= enemy.controller.next_control) {
+
+                        enemy.controller.behavior(enemy);
+                        enemy.controller.next_control = game.time.now + enemy.controller.control_interval;
+                    }
+                });
+
+
+            });
+
+            game.physics.arcade.overlap(this.player, this.powerups, function(player, powerup) {
+                powerup.kill();
+                var new_effect = game.add.sprite(player.x, player.y, powerup.controller.player_effect);
+                
+                new_effect.angle = _this.current_effect_offset;
+                new_effect.anchor.setTo(0.5, 0.5);
+             
+                _this[powerup.controller.property] += powerup.controller.increment;
+                new_effect.spritename = powerup.controller.player_effect;
+                _this.player_effects.add(new_effect);
+                this.current_effect_offset += 21;
+            });
+
+            // Generate Enemies
+
+            if (game.rnd.integerInRange(0, 1000) < (this.spawn_chance * frames)) {
+                this.random_spawn();
+            }
+
+            if (game.rnd.integerInRange(0, 10000) < 5) {
+                this.random_powerup();
+            }
+            
             if (game.device.android) {
                 // process mobile controls
                 var left_joystick_coords = this.joystick_left.coords();
@@ -564,70 +728,6 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 if (game.input.keyboard.isDown(KEYCODE_W)) {
                     this.decelerate(this.player.body, 'y');
                 }
-            }
-
-            var frame_delta = game.time.now - this.last_frame_time;
-            var frames = frame_delta / (1000 / 60); // Pretending 60fps
-
-            this.player.angle += 15 * frames;
-
-            this.player_effects.forEach(function(effect) {
-                effect.x = _this.player.x;
-                effect.y = _this.player.y;
-                effect.angle += 20 * frames;
-            });
-
-            Object.keys(this.enemies_by_type).forEach(function(type) {
-                // Collide stuff
-                game.physics.arcade.collide(_this.projectiles, _this.enemies_by_type[type], function(projectile, enemy) {
-                    projectile.kill();
-                    _this.explode_at(enemy.x, enemy.y);
-
-                    enemy.damage(_this.shot_damage);
-                });
-
-                game.physics.arcade.collide(_this.player, _this.enemies_by_type[type], function(player, enemy) {
-                    if (_this.player.alive) {
-                        _this.player.kill();
-                        _this.explode_at(_this.player.x, _this.player.y);
-                        game.time.events.add(1000, function() {
-                            _this.game_over();
-                        });
-                    }
-                });
-
-                _this.enemies_by_type[type].forEachAlive(function(enemy) {
-                    enemy.angle += enemy.controller.rotation * frames;
-                    if (game.time.now >= enemy.controller.next_control) {
-
-                        enemy.controller.behavior(enemy);
-                        enemy.controller.next_control = game.time.now + enemy.controller.control_interval;
-                    }
-                });
-
-
-            });
-
-            game.physics.arcade.collide(this.player, this.powerups, function(player, powerup) {
-                powerup.kill();
-                var new_effect = game.add.sprite(player.x, player.y, powerup.controller.player_effect);
-                console.log(new_effect);
-                new_effect.angle = _this.current_effect_offset;
-                new_effect.anchor.setTo(0.5, 0.5);
-                //console.log(new_effect);
-                _this[powerup.controller.property] += powerup.controller.increment;
-                _this.player_effects.add(new_effect);
-                this.current_effect_offset += 21;
-            });
-
-            // Generate Enemies
-
-            if (game.rnd.integerInRange(0, 1000) < (this.spawn_chance * frames)) {
-                this.random_spawn();
-            }
-
-            if (game.rnd.integerInRange(0, 10000) < 5) {
-                this.random_powerup();
             }
 
             this.spawn_chance = 5 + (Math.floor(this.score / 10));
