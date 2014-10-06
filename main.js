@@ -1,11 +1,11 @@
 
-var VERSION = '0.2.2';
+var VERSION = '0.4';
 var KEYCODE_A = 65;
 var KEYCODE_S = 83;
 var KEYCODE_D = 68;
 var KEYCODE_W = 87;
-var GAME_WIDTH = 1200;
-var GAME_HEIGHT = 675;
+var GAME_WIDTH = 900;
+var GAME_HEIGHT = 506;
 
 var extend = function(base, extension) {
     var new_obj = Object.create(base);
@@ -18,12 +18,12 @@ var extend = function(base, extension) {
 require.config({
     paths: {
         'Phaser': 'phaser.min',
+        
         'Components': 'components'
     }
 });
 
 require(['Phaser','Components'], function(Phaser, Components) {
-    
     var posneg = function() {
         return game.rnd.integerInRange(0,10) > 5 ? -1 : 1;
     };
@@ -34,7 +34,6 @@ require(['Phaser','Components'], function(Phaser, Components) {
         increment: 0,
         player_effect: null,
         sprite: null,
-        destroy_on_impact: true
     };
 
     var shot_damage_powerup = {
@@ -320,7 +319,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
                     game.physics.enable(pew, Phaser.Physics.ARCADE);
 
                     if (!game.device.android) {
-                        pew.emitter = game.add.emitter(pew.x, pew.y, 100);
+                        pew.emitter = game.add.emitter(pew.x, pew.y, 20);
                         pew.emitter.gravity = 0;
                         pew.emitter.maxParticleSpeed.x = 30;
                         pew.emitter.maxParticleSpeed.y = 30;
@@ -332,7 +331,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
                 if (!game.device.android) { 
 
-                    pew.emitter.start(false, 250, 0, 0, false);
+                    pew.emitter.start(false, 120, 5);
 
                     pew.events.onKilled.addOnce(function() {
                         pew.emitter.kill();
@@ -520,7 +519,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
             game.physics.enable(this.player, Phaser.Physics.ARCADE);
             this.player.body.collideWorldBounds = true;
-            this.player.body.bounce = 1;
+            
 
             var text_style = {
                 'font': "14px Arial",
@@ -530,7 +529,6 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
             this.fps_text = game.add.text(10, 10, 'FPS: 0', text_style);
             this.score_text = game.add.text(10, 28, 'Score: 0', text_style);
-
         },
         is_game_over: false,
         game_over: function() {
@@ -615,6 +613,55 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 effect.y = _this.player.y;
                 effect.angle += 20 * frames;
             });
+            
+            if (game.device.android) {
+                // process mobile controls
+                var left_joystick_coords = this.joystick_left.coords();
+                var right_joystick_coords = this.joystick_right.coords();
+
+                for (var axis in left_joystick_coords) {
+                    if (left_joystick_coords[axis] !== null) {
+                        if (left_joystick_coords[axis] > 0) {
+                            this.accelerate(this.player.body, axis, this.player_acceleration * left_joystick_coords[axis] * 1.5);
+                        } else {
+
+                            this.decelerate(this.player.body, axis, this.player_acceleration * Math.abs(left_joystick_coords[axis]) * 1.5);
+                        }
+                    }
+                }
+
+                if (right_joystick_coords.x !== null) {
+                    this.shoot(right_joystick_coords.x, right_joystick_coords.y);
+                }
+            } else {
+
+                this.projectiles.forEachAlive(function(pew) {
+                    pew.emitter.x = pew.x;
+                    pew.emitter.y = pew.y;
+                });
+                // Process Input
+                if (game.input.activePointer.isDown) {
+
+                    this.shoot();
+
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_A)) {
+                    this.decelerate(this.player.body, 'x');
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_D)) {
+                    this.accelerate(this.player.body, 'x');
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_S)) {
+                    this.accelerate(this.player.body, 'y');
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_W)) {
+                    this.decelerate(this.player.body, 'y');
+                }
+            }
 
             Object.keys(this.enemies_by_type).forEach(function(type) {
                 // Collide stuff
@@ -681,54 +728,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 this.random_powerup();
             }
             
-            if (game.device.android) {
-                // process mobile controls
-                var left_joystick_coords = this.joystick_left.coords();
-                var right_joystick_coords = this.joystick_right.coords();
-
-                for (var axis in left_joystick_coords) {
-                    if (left_joystick_coords[axis] !== null) {
-                        if (left_joystick_coords[axis] > 0) {
-                            this.accelerate(this.player.body, axis, this.player_acceleration * left_joystick_coords[axis] * 1.5);
-                        } else {
-
-                            this.decelerate(this.player.body, axis, this.player_acceleration * Math.abs(left_joystick_coords[axis]) * 1.5);
-                        }
-                    }
-                }
-
-                if (right_joystick_coords.x !== null) {
-                    this.shoot(right_joystick_coords.x, right_joystick_coords.y);
-                }
-            } else {
-
-                this.projectiles.forEachAlive(function(pew) {
-                    pew.emitter.x = pew.x;
-                    pew.emitter.y = pew.y;
-                });
-                // Process Input
-                if (game.input.activePointer.isDown) {
-
-                    this.shoot();
-
-                }
-
-                if (game.input.keyboard.isDown(KEYCODE_A)) {
-                    this.decelerate(this.player.body, 'x');
-                }
-
-                if (game.input.keyboard.isDown(KEYCODE_D)) {
-                    this.accelerate(this.player.body, 'x');
-                }
-
-                if (game.input.keyboard.isDown(KEYCODE_S)) {
-                    this.accelerate(this.player.body, 'y');
-                }
-
-                if (game.input.keyboard.isDown(KEYCODE_W)) {
-                    this.decelerate(this.player.body, 'y');
-                }
-            }
+            
 
             this.spawn_chance = 5 + (Math.floor(this.score / 10));
 
@@ -741,9 +741,11 @@ require(['Phaser','Components'], function(Phaser, Components) {
         main.go_fullscreen();
     };
 
-    game = new Phaser.Game(GAME_WIDTH, GAME_HEIGHT, Phaser.AUTO, 'gameDiv');
+    game = new Phaser.Game(GAME_WIDTH, GAME_HEIGHT, Phaser.CANVAS, 'gameDiv');
     game.state.add('main', main);
+    
     game.state.start('main');
+    
 
     components = Components(game);
     enemies = enemies_setup();
