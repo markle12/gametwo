@@ -846,6 +846,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
                             });
                         } else {
                             _this.shield_points -= 1;
+                            _this.explode_at(enemy.x, enemy.y);
                             enemy.kill();
                             var breakloop = false;
                             _this.player_effects.forEachAlive(function(effect) {
