@@ -1,4 +1,20 @@
-
+// 0.4 goals
+// Resize
+// Emitter changes for player projectiles
+// New enemy type?
+// Spawn framework rework
+// Background - animated?
+// Make player a group to which effects are added
+// Override changes
+// Stat reporting
+//  -Kills
+//  -Shots
+//  -Hits
+//  -Time Played
+//  -Average fps
+//  -Pauses
+//  -Powerups
+//  -Killed by
 var VERSION = '0.4';
 var KEYCODE_A = 65;
 var KEYCODE_S = 83;
@@ -29,47 +45,33 @@ require(['Phaser','Components'], function(Phaser, Components) {
     };
 
     /*** Powerups! ***/
-    var powerup = {
-        property: null,
-        increment: 0,
-        player_effect: null,
-        sprite: null,
-    };
-
-    var shot_damage_powerup = {
-        property: 'shot_damage',
-        increment: 1,
-        player_effect: 'player_effect_blue',
-        sprite: 'bluearrow'
-    };
-
-    var shot_speed_powerup = {
-        property: 'shot_speed',
-        increment: 50,
-        player_effect: 'player_effect_yellow',
-        sprite: 'yellowarrow'
-    };
-
-    var accel_powerup = {
-        property: 'player_acceleration',
-        increment: 1,
-        player_effect: 'player_effect_green',
-        sprite: 'greenarrow'
-    };
     
-    var shield_powerup = {
-        property: 'shield_points',
-        increment: 1,
-        player_effect: 'player_effect_shield',
-        sprite: 'shield_icon'
+    var powerup_types = {
+        shot_damage_powerup: {
+            property: 'shot_damage',
+            increment: 1,
+            player_effect: 'player_effect_blue',
+            sprite: 'bluearrow'
+        },
+        accel_powerup: {
+            property: 'player_acceleration',
+            increment: 1,
+            player_effect: 'player_effect_green',
+            sprite: 'greenarrow'
+        },
+        shot_speed_powerup: {
+            property: 'shot_speed',
+            increment: 50,
+            player_effect: 'player_effect_yellow',
+            sprite: 'yellowarrow'
+        },
+        shield_powerup: {
+            property: 'shield_points',
+            increment: 1,
+            player_effect: 'player_effect_shield',
+            sprite: 'shield_icon'
+        }
     };
-
-    var powerup_types = [
-        shot_damage_powerup,
-        shot_speed_powerup,
-        accel_powerup,
-        shield_powerup
-    ];
     
     var enemies_setup = function() {
         var enemies = {};
@@ -246,23 +248,97 @@ require(['Phaser','Components'], function(Phaser, Components) {
         return enemies;
     };
     
+    // Shortcut for simple time based spawners with a spawn cap
+    var timer_based_spawner_factory = function(max_alive, time_til_guaranteed) {
+        var id = Math.random();
+        return function(group, time_since_last) {
+            
+            var rnd = game.rnd.integerInRange(0, time_til_guaranteed);
+            
+            if (group.countLiving() < max_alive && rnd < time_since_last) {
+                return true;
+            }
+            return false;
+        };
+    };
+    
+    // function(time_since_last, enemy_group) -> return true if spawn
     var spawn_thresholds = {
         0: {
-            enemies: ['enemy1'],
-            bonuses: []
+            enemies: {
+                enemy1: timer_based_spawner_factory(20, 3000)
+            },
+            powerups: {
+                shield_powerup: timer_based_spawner_factory(1, 30000),
+                shot_speed_powerup: timer_based_spawner_factory(1, 30000),
+                accel_powerup: timer_based_spawner_factory(1, 30000)
+            }
         },
         10: {
-            enemies: ['enemy1', 'enemy2'],
-            bonuses: []
+            enemies: {
+                enemy1: timer_based_spawner_factory(25, 2000),
+                enemy2: timer_based_spawner_factory(10, 3000)
+            },
+            powerups: {
+                shot_damage_powerup: timer_based_spawner_factory(1, 40000),
+                shield_powerup: timer_based_spawner_factory(1, 30000),
+                shot_speed_powerup: timer_based_spawner_factory(1, 30000),
+                accel_powerup: timer_based_spawner_factory(1, 30000)
+            }
         },
         25: {
-            enemies: ['enemy1', 'enemy2', 'curver']
+            enemies: {
+                enemy1: timer_based_spawner_factory(25, 2000),
+                enemy2: timer_based_spawner_factory(10, 3000),
+                curver: timer_based_spawner_factory(20, 2000)
+            },
+            powerups: {
+                shot_damage_powerup: timer_based_spawner_factory(1, 40000),
+                shield_powerup: timer_based_spawner_factory(1, 30000),
+                shot_speed_powerup: timer_based_spawner_factory(1, 30000),
+                accel_powerup: timer_based_spawner_factory(1, 30000)
+            }
         },
         50: {
-            enemies: ['enemy2', 'curver', 'centipede_part']
+            enemies: {  
+                centipede_part: timer_based_spawner_factory(25, 6000), // Every piece of a centipede counts for the check, so setting to 25 even though on average should amount to five complete 'pedes
+                enemy2: timer_based_spawner_factory(10, 3000),
+                curver: timer_based_spawner_factory(20, 2000)
+            },
+            powerups: {
+                shot_damage_powerup: timer_based_spawner_factory(1, 40000),
+                shield_powerup: timer_based_spawner_factory(1, 30000),
+                shot_speed_powerup: timer_based_spawner_factory(1, 30000),
+                accel_powerup: timer_based_spawner_factory(1, 30000)
+            }
         },
         80: {
-            enemies: ['enemy2', 'centipede_part', 'bigenemy']
+            enemies: {  
+                centipede_part: timer_based_spawner_factory(25, 6000), // Every piece of a centipede counts for the check, so setting to 25 even though on average should amount to five complete 'pedes
+                enemy2: timer_based_spawner_factory(10, 3000),
+                curver: timer_based_spawner_factory(20, 2000),
+                bigenemy: timer_based_spawner_factory(4, 7000),
+            },
+            powerups: {
+                shot_damage_powerup: timer_based_spawner_factory(1, 40000),
+                shield_powerup: timer_based_spawner_factory(2, 20000),
+                shot_speed_powerup: timer_based_spawner_factory(1, 60000),
+                accel_powerup: timer_based_spawner_factory(1, 60000)
+            }
+        },
+        120: {
+            enemies: {  
+                centipede_part: timer_based_spawner_factory(25, 6000), // Every piece of a centipede counts for the check, so setting to 25 even though on average should amount to five complete 'pedes
+                enemy2: timer_based_spawner_factory(15, 2000),
+                curver: timer_based_spawner_factory(20, 1000),
+                bigenemy: timer_based_spawner_factory(5, 7000),
+            },
+            powerups: {
+                shot_damage_powerup: timer_based_spawner_factory(1, 40000),
+                shield_powerup: timer_based_spawner_factory(3, 10000),
+                shot_speed_powerup: timer_based_spawner_factory(1, 120000),
+                accel_powerup: timer_based_spawner_factory(1, 120000)
+            }
         }
     };
     
@@ -280,6 +356,9 @@ require(['Phaser','Components'], function(Phaser, Components) {
         last_frame_time: 0,
         fullscreen: false,
         shield_points: 0,
+        enemy_spawn_timer: 0,
+        powerup_spawn_timer: 0,
+        spawn_timings: {},
         accelerate: function(body, dimension, amount) {
             if (amount === undefined) {
                 amount = this.player_acceleration;
@@ -304,6 +383,33 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 }
             }
         },
+        bullet_preload: function() { // Biggest lag point is creating bullets and their emitters early in the game!
+            for (var i = 0; i < 200; i++) {
+                var pew = game.add.sprite(this.player.x, this.player.y, 'projectile');
+                pew.anchor.setTo(0.5, 0.5);
+                pew.checkWorldBounds = true;
+                pew.outOfBoundsKill = true;
+                this.projectiles.add(pew);
+                game.physics.enable(pew, Phaser.Physics.ARCADE);
+                
+                if (!game.device.android) {
+                    pew.emitter = game.add.emitter(pew.x, pew.y, 20);
+                    pew.emitter.gravity = 0;
+
+
+                    pew.emitter.minParticleScale = 0.2;
+                    pew.emitter.maxParticleScale = 0.8;
+                    pew.emitter.setAlpha(0.5, 1);
+                    pew.emitter.minParticleSpeed.setTo(-80, -80);
+                    pew.emitter.maxParticleSpeed.setTo(80, 80);
+
+                    pew.emitter.makeParticles(['particle1', 'particle2']);    
+                }
+                
+                pew.kill();
+            }
+            //this.projectiles.setAll('alive', false);
+        },
         shoot: function(x, y) {
 
             if (this.player.alive && game.time.now > this.next_shot) {
@@ -321,8 +427,13 @@ require(['Phaser','Components'], function(Phaser, Components) {
                     if (!game.device.android) {
                         pew.emitter = game.add.emitter(pew.x, pew.y, 20);
                         pew.emitter.gravity = 0;
-                        pew.emitter.maxParticleSpeed.x = 30;
-                        pew.emitter.maxParticleSpeed.y = 30;
+                        
+                        
+                        pew.emitter.minParticleScale = 0.2;
+                        pew.emitter.maxParticleScale = 0.8;
+                        pew.emitter.setAlpha(0.5, 1);
+                        pew.emitter.minParticleSpeed.setTo(-80, -80);
+                        pew.emitter.maxParticleSpeed.setTo(80, 80);
 
                         pew.emitter.makeParticles(['particle1', 'particle2']);    
                     }
@@ -355,15 +466,51 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 this.next_shot = game.time.now + this.shot_cooldown;
             }
         },
-        create_powerup: function(type, x ,y) {
-            var powerup = game.add.sprite(x, y, type.sprite);
-            game.physics.enable(powerup, Phaser.Physics.ARCADE);
-            powerup.controller = type;
-            this.powerups.add(powerup);
+        create_powerup: function(type, x,y) {
+            
+            if (this.powerups_by_type[type] === undefined) {
+                this.powerups_by_type[type] = game.add.group();
+            }
+            
+            if (this.powerups_by_type[type].countDead() > 0) {
+                var powerup = this.powerups_by_type[type].getFirstDead();
+                powerup.reset(x,y);
+            } else {
+                var powerup_def = powerup_types[type]
+                var powerup = game.add.sprite(x, y, powerup_def.sprite);
+                game.physics.enable(powerup, Phaser.Physics.ARCADE);
+                powerup.controller = powerup_def;
+                this.powerups_by_type[type].add(powerup);
+            }
         },
         random_powerup: function() {
-            var type = powerup_types[game.rnd.integerInRange(0,powerup_types.length-1)];
-            this.create_powerup(type, game.rnd.integerInRange(0, GAME_WIDTH), game.rnd.integerInRange(0, GAME_HEIGHT));    
+            var current_level = 0;
+            var thresholds = Object.keys(spawn_thresholds);
+            for (var i = 0; i < thresholds.length; i++) {
+                if (thresholds[i] > this.score) {
+                    break;
+                }
+                current_level = spawn_thresholds[thresholds[i]];
+            }
+           
+            for (var powerup in current_level.powerups) {
+                if (this.spawn_timings[powerup] === undefined) {
+                    this.spawn_timings[powerup] = game.time.now;
+                }
+                var time_since_last = game.time.now - this.spawn_timings[powerup];
+                
+                if (this.powerups_by_type[powerup] === undefined) {
+                    this.powerups_by_type[powerup] = game.add.group();
+                }
+                
+                if (current_level.powerups[powerup](this.powerups_by_type[powerup], time_since_last)) {
+                    this.create_powerup(powerup, game.rnd.integerInRange(0, GAME_WIDTH), game.rnd.integerInRange(0, GAME_HEIGHT));
+                    
+                    this.spawn_timings[powerup] = game.time.now;
+                }
+                
+            }
+            this.powerup_spawn_timer = game.time.now;
         },
         create_enemy: function(type, x, y, init_options) {
             var _this = this;
@@ -405,8 +552,8 @@ require(['Phaser','Components'], function(Phaser, Components) {
             enemy.controller.next_control = game.time.now + enemy.controller.control_interval;
             return enemy;
         },
+        
         random_spawn: function() {
-            var _this = this;
             var current_level = 0;
             var thresholds = Object.keys(spawn_thresholds);
             for (var i = 0; i < thresholds.length; i++) {
@@ -416,11 +563,22 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 current_level = spawn_thresholds[thresholds[i]];
             }
 
-
-            var new_enemy_type = current_level.enemies[game.rnd.integerInRange(0, current_level.enemies.length-1)];
-            var x = game.rnd.integerInRange(0, GAME_WIDTH);
-            var y = game.rnd.integerInRange(0, GAME_HEIGHT);
-            this.create_enemy(new_enemy_type, x, y);
+            for (var enemy in current_level.enemies) {
+                if (this.spawn_timings[enemy] === undefined) {
+                    this.spawn_timings[enemy] = game.time.now;
+                }
+                var time_since_last = game.time.now - this.spawn_timings[enemy];
+                
+                if (this.enemies_by_type[enemy] === undefined) {
+                    this.enemies_by_type[enemy] = game.add.group();
+                }
+            
+                if (current_level.enemies[enemy](this.enemies_by_type[enemy], time_since_last)) {
+                    this.create_enemy(enemy, game.rnd.integerInRange(0, GAME_WIDTH), game.rnd.integerInRange(0, GAME_HEIGHT));        
+                    this.spawn_timings[enemy] = game.time.now;
+                }
+            }
+            this.enemy_spawn_timer = game.time.now;
         },
         explode_at: function(x, y) {
 
@@ -456,8 +614,8 @@ require(['Phaser','Components'], function(Phaser, Components) {
             game.load.image('player', 'assets/player.png');
 
             game.load.image('projectile', 'assets/pew.png');
-            game.load.image('particle1', 'assets/particle1.png');
-            game.load.image('particle2', 'assets/particle2.png');
+            game.load.image('particle1', 'assets/blueparticle_large.png');
+            game.load.image('particle2', 'assets/bluegreenparticle_large.png');
             game.load.image('redparticle', 'assets/redparticle.png');
             game.load.image('yellowparticle', 'assets/yellowparticle.png');
             game.load.image('orangeparticle', 'assets/orangeparticle.png');
@@ -497,13 +655,15 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 this.joystick_right.init({x: 650, y: 300}, 'touch_circle');
             }
 
-            for (var i = 0; i < powerup_types.length; i++) {
-                this[powerup_types[i].property+'_default'] = this[powerup_types[i].property];
+            
+            for (var powerup in powerup_types) {
+                this[powerup_types[powerup].property+'_default'] = this[powerup_types[powerup].property];
             }
 
             // Entity groups
             this.projectiles = game.add.group();
             this.enemies_by_type = {};
+            this.powerups_by_type = {};
 
             // Emitter groups
             this.explosions = game.add.group();
@@ -529,6 +689,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
             this.fps_text = game.add.text(10, 10, 'FPS: 0', text_style);
             this.score_text = game.add.text(10, 28, 'Score: 0', text_style);
+            this.bullet_preload();
         },
         is_game_over: false,
         game_over: function() {
@@ -538,10 +699,16 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 this.enemies_by_type[type].destroy(true);
                 delete this.enemies_by_type[type];
             }
+            
+            for (var type in this.powerups_by_type) {
+                this.powerups_by_type[type].destroy(true);
+                delete this.powerups_by_type[type];
+            }
 
             this.projectiles.destroy(true);
             this.explosions.destroy(true);
-            this.powerups.destroy(true);
+            
+            
             this.player_effects.destroy(true);
 
             components.highscores.update(this.score);
@@ -560,8 +727,10 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
         },
         reset: function() {
-            for (var i = 0; i < powerup_types.length; i++) {
-                this[powerup_types[i].property] = this[powerup_types[i].property+'_default'];
+            
+            
+            for (var powerup in powerup_types) {
+                this[powerup_types[powerup].property] = this[powerup_types[powerup].property+'_default'];
             }
 
             components.highscores.clear();
@@ -596,12 +765,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
             this.fps_text.text = 'FPS: '+game.time.fps;
             this.score_text.text = 'Score: '+this.score;
 
-            var _this = this;
-            // Move emitters
-
-
-
-            
+            var _this = this;     
 
             var frame_delta = game.time.now - this.last_frame_time;
             var frames = frame_delta / (1000 / 60); // Pretending 60fps
@@ -682,6 +846,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
                             });
                         } else {
                             _this.shield_points -= 1;
+                            enemy.kill();
                             var breakloop = false;
                             _this.player_effects.forEachAlive(function(effect) {
                                 if (!breakloop && effect.spritename == 'player_effect_shield') {
@@ -704,27 +869,29 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
 
             });
+            
+            Object.keys(this.powerups_by_type).forEach(function(type) {
+                game.physics.arcade.overlap(_this.player, _this.powerups_by_type[type], function(player, powerup) {
+                    powerup.kill();
+                    var new_effect = game.add.sprite(player.x, player.y, powerup.controller.player_effect);
 
-            game.physics.arcade.overlap(this.player, this.powerups, function(player, powerup) {
-                powerup.kill();
-                var new_effect = game.add.sprite(player.x, player.y, powerup.controller.player_effect);
-                
-                new_effect.angle = _this.current_effect_offset;
-                new_effect.anchor.setTo(0.5, 0.5);
-             
-                _this[powerup.controller.property] += powerup.controller.increment;
-                new_effect.spritename = powerup.controller.player_effect;
-                _this.player_effects.add(new_effect);
-                this.current_effect_offset += 21;
+                    new_effect.angle = _this.current_effect_offset;
+                    new_effect.anchor.setTo(0.5, 0.5);
+
+                    _this[powerup.controller.property] += powerup.controller.increment;
+                    new_effect.spritename = powerup.controller.player_effect;
+                    _this.player_effects.add(new_effect);
+                    _this.current_effect_offset += 21;
+                });
             });
 
             // Generate Enemies
 
-            if (game.rnd.integerInRange(0, 1000) < (this.spawn_chance * frames)) {
+            if (game.time.now - this.enemy_spawn_timer > 500) {
                 this.random_spawn();
             }
 
-            if (game.rnd.integerInRange(0, 10000) < 5) {
+            if (game.time.now - this.powerup_spawn_timer > 1000) {
                 this.random_powerup();
             }
             
