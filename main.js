@@ -825,7 +825,7 @@ require(['Phaser','Components','override'], function(Phaser, Components, overrid
         },
         reset: function() {
             for (var stat in this.stats) {
-                if (typeof(stat) == 'number') {
+                if (typeof(this.stats[stat]) == 'number') {
                     this.stats[stat] = 0;
                 } else {
                     this.stats[stat] = [];
