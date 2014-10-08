@@ -808,6 +808,386 @@ require(['Phaser','Components','override'], function(Phaser, Components, overrid
             delete stats.startTime;
             delete stats.fps_snapshots;
             
+            components.highscores.update(this.score, stats);
+            components.highscores.render_scores();
+
+            var text_style = {
+                'font': "14px Arial",
+                'fill': 'blue',
+                'align': 'left'
+            };
+            this.retry = game.add.sprite(250, 300, 'retry');
+
+            this.retry.inputEnabled = true;
+
+            this.retry.input.start();
+
+        },
+        reset: function() {
+            for (var stat in this.stats) {
+                if (typeof(stat) == 'number') {
+                    this.stats[stat] = 0;
+                } else {
+                    this.stats[stat] = [];
+                }
+            }
+            
+            for (var powerup in powerup_types) {
+                this[powerup_types[powerup].property] = this[powerup_types[powerup].property+'_default'];
+            }
+
+            components.highscores.clear();
+            this.is_game_over = false;
+
+            this.retry.destroy();
+
+            this.projectiles = game.add.group();
+            this.explosions = game.add.group();
+            this.powerups = game.add.group();
+            this.player_effects = game.add.group();
+
+            this.kills = 0;
+            this.score = 0;
+       
+            this.score_text.text = 'Score: 0';
+            
+            this.spawn_timings = {};
+            this.corner_timer = null;
+
+            this.player.reset(200, 200);
+            this.stats.startTime = game.time.now;
+        },
+        go_fullscreen: function() {
+            game.scale.fullScreenScaleMode = Phaser.ScaleManager.SHOW_ALL;
+            game.scale.startFullScreen(false);
+        },
+        update: function() {
+            if (this.is_game_over) {
+                if (this.retry.input.pointerDown(game.input.activePointer.id)) {
+                    this.reset();
+                }
+                return;
+            }
+
+            this.fps_text.text = 'FPS: '+game.time.fps;
+            this.score_text.text = 'Score: '+this.score;
+
+            var _this = this;     
+
+            var frame_delta = game.time.now - this.last_frame_time;
+            var frames = frame_delta / (1000 / 60); // Pretending 60fps
+
+            this.player.angle += 15 * frames;
+
+            
+            
+            if (game.device.android) {
+                // process mobile controls
+                var left_joystick_coords = this.joystick_left.coords();
+                var right_joystick_coords = this.joystick_right.coords();
+
+                for (var axis in left_joystick_coords) {
+                    if (left_joystick_coords[axis] !== null) {
+                        if (left_joystick_coords[axis] > 0) {
+                            this.accelerate(this.player.body, axis, this.player_acceleration * left_joystick_coords[axis] * 1.5);
+                        } else {
+
+                            this.decelerate(this.player.body, axis, this.player_acceleration * Math.abs(left_joystick_coords[axis]) * 1.5);
+                        }
+                    }
+                }
+
+                if (right_joystick_coords.x !== null) {
+                    this.shoot(right_joystick_coords.x, right_joystick_coords.y);
+                }
+            } else {
+
+                this.projectiles.forEachAlive(function(pew) {
+                    pew.emitter.x = pew.x;
+                    pew.emitter.y = pew.y;
+                });
+                // Process Input
+                if (game.input.activePointer.isDown) {
+
+                    this.shoot();
+
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_A)) {
+                    this.decelerate(this.player.body, 'x');
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_D)) {
+                    this.accelerate(this.player.body, 'x');
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_S)) {
+                    this.accelerate(this.player.body, 'y');
+                }
+
+                if (game.input.keyboard.isDown(KEYCODE_W)) {
+                    this.decelerate(this.player.body, 'y');
+                }
+            }
+            
+            var offset = 20;
+            var ccw = 1;
+            this.player_effects.forEach(function(effect) {
+                effect.x = _this.player.x;
+                effect.y = _this.player.y;
+                effect.body.velocity.x = _this.player.body.velocity.x;
+                effect.body.velocity.y = _this.player.body.velocity.y;
+                effect.angle = _this.player.angle + offset * ccw;
+                offset += 20;
+                ccw *= -1;
+            });
+
+            Object.keys(this.enemies_by_type).forEach(function(type) {
+                // Collide stuff
+                game.physics.arcade.collide(_this.projectiles, _this.enemies_by_type[type], function(projectile, enemy) {
+                    projectile.kill();
+                    _this.explode_at(enemy.x, enemy.y);
+                    
+                    _this.stats.hits += 1;
+                    enemy.damage(_this.shot_damage);
+                    if (enemy.alive !== true) {
+                        _this.stats.kills += 1;
+                    }
+                });
+
+                game.physics.arcade.collide(_this.player, _this.enemies_by_type[type], function(player, enemy) {
+                    if (_this.player.alive) {
+                        _this.stats.collisions += 1;
+                        if (_this.shield_points < 1) {
+                            _this.player.kill();
+                            _this.explode_at(_this.player.x, _this.player.y);
+                            game.time.events.add(1000, function() {
+                                _this.game_over();
+                            });
+                        } else {
+                            _this.shield_points -= 1;
+                            _this.explode_at(enemy.x, enemy.y);
+                            enemy.kill();
+                            var breakloop = false;
+                            _this.player_effects.forEachAlive(function(effect) {
+                                if (!breakloop && effect.spritename == 'player_effect_shield') {
+                                    effect.kill();
+                                    breakloop = true;
+                                }
+                            });
+                        }
+                    }
+                });
+
+                _this.enemies_by_type[type].forEachAlive(function(enemy) {
+                    enemy.angle += enemy.controller.rotation * frames;
+                    if (game.time.now >= enemy.controller.next_control) {
+
+                        enemy.controller.behavior(enemy);
+                        enemy.controller.next_control = game.time.now + enemy.controller.control_interval;
+                    }
+                });
+
+
+            });
+            
+            Object.keys(this.powerups_by_type).forEach(function(type) {
+                game.physics.arcade.overlap(_this.player, _this.powerups_by_type[type], function(player, powerup) {
+                    _this.stats.powerups += 1;
+                    powerup.kill();
+                    var new_effect = game.add.sprite(player.x, player.y, powerup.controller.player_effect);
+                    game.physics.enable(new_effect, game.physics.ARCADE);
+                    new_effect.angle = _this.current_effect_offset;
+                    new_effect.anchor.setTo(0.5, 0.5);
+
+                    _this[powerup.controller.property] += powerup.controller.increment;
+                    new_effect.spritename = powerup.controller.player_effect;
+                    _this.player_effects.add(new_effect);
+                    _this.current_effect_offset += 21;
+                });
+            });
+
+            // Generate Enemies
+
+            if (game.time.now - this.enemy_spawn_timer > 500) {
+                this.random_spawn();
+            }
+
+            if (game.time.now - this.powerup_spawn_timer > 1000) {
+                this.random_powerup();
+            }
+            
+            //  Corner checker
+            if ( (this.player.x < 25 && this.player.y < 25) ||
+                (this.player.x > GAME_WIDTH - 25 && this.player.y < 25) ||
+                (this.player.x > GAME_WIDTH - 25 && this.player.y > GAME_HEIGHT - 25) ||
+                (this.player.x < 25 && this.player.y > GAME_HEIGHT -25)) {
+                
+                if (this.corner_timer === null) {
+                    this.corner_timer = game.time.now;
+                } else if (game.time.now - this.corner_timer > 12000) {
+                    this.spawn_corner_enemies();
+                    this.corner_timer += 2000;
+                }
+                
+            } else {
+                this.corner_timer = null;
+            }
+            
+
+            
+            if (game.time.now - 1000 > this.snapshot_timer) {
+                this.stats.fps_snapshots.push(game.time.fps);
+                this.snapshot_timer = game.time.now;
+            }
+            this.last_frame_time = game.time.now;
+
+        },
+        spawn_corner_enemies: function() {
+            var num = game.rnd.integerInRange(5,8);
+            for (var i = 0; i < num; i++) {
+                if (this.player.x < 25) {
+                    var x = game.rnd.integerInRange(25,65);
+                } else {
+                    var x = game.rnd.integerInRange(GAME_WIDTH-65, GAME_WIDTH-25);
+                }
+                
+                if (this.player.y < 25) {
+                    var y = game.rnd.integerInRange(0,65);
+                } else {
+                    var y = game.rnd.integerInRange(GAME_HEIGHT-65, GAME_HEIGHT);
+                }
+                this.create_enemy('stop_and_go', x, y).controller.wait = 0;
+            }
+        }
+    };
+
+    document.getElementById('my_fullscreen').onclick = function() {
+        main.go_fullscreen();
+    };
+
+    game = new Phaser.Game(GAME_WIDTH, GAME_HEIGHT, Phaser.CANVAS, 'gameDiv');
+    
+    components = Components(game);
+    override(game, components);
+    
+    game.state.add('main', main);
+    
+    game.state.start('main');
+    
+    
+
+    
+    enemies = enemies_setup();
+    
+});.load.image('player_effect_yellow', 'assets/player_effect_yellow.png');
+            game.load.image('player_effect_shield', 'assets/player_effect_shield.png');
+            
+
+            game.load.image('splitdude','assets/split_dude.png');
+
+
+            game.load.spritesheet('enemy1', 'assets/enemy1_new.png', 16, 16);
+            game.load.spritesheet('enemy2', 'assets/enemy2_new.png', 16, 16);
+            game.load.spritesheet('enemy5', 'assets/enemy_sheet.png', 20, 20);
+            game.load.spritesheet('enemy6', 'assets/greensheet.png', 10, 10);
+            game.load.spritesheet('bigenemy', 'assets/bigenemy_sheet.png', 35, 35);
+            game.load.spritesheet('centipede_part','assets/centipede_sheet.png', 20, 20);
+            game.load.spritesheet('stopandgo','assets/stopandgo.png', 20, 20);
+
+            game.load.image('touch_circle','assets/control_circle.png');
+        },
+        create: function() {
+            this.stats.startTime = game.time.now;
+            
+            game.onPause.add(function() {
+                main.stats.pauses += 1;
+            });
+
+            game.onResume.add(function() {
+                main.stats.pausedTime += game.time.pausedTime;
+            });
+
+            game.add.sprite(0,0,'background');
+            components.highscores.init();
+
+            // Mobile controls
+            if (game.device.android) {
+                this.joystick_left = Object.create(components.touch_joystick);
+                this.joystick_left.init({x: 0, y: 300}, 'touch_circle');
+
+
+                this.joystick_right = Object.create(components.touch_joystick);
+                this.joystick_right.init({x: 650, y: 300}, 'touch_circle');
+            }
+
+            
+            for (var powerup in powerup_types) {
+                this[powerup_types[powerup].property+'_default'] = this[powerup_types[powerup].property];
+            }
+
+            // Entity groups
+            this.projectiles = game.add.group();
+            this.enemies_by_type = {};
+            this.powerups_by_type = {};
+
+            // Emitter groups
+            this.explosions = game.add.group();
+
+            this.powerups = game.add.group();
+            this.player_effects = game.add.group();
+            this.current_effect_offset = 0;
+
+            game.physics.startSystem(Phaser.Physics.ARCADE);
+
+            this.player = game.add.sprite(200, 200, 'player');
+            this.player.anchor.setTo(0.5, 0.5);
+            game.physics.enable(this.player, Phaser.Physics.ARCADE);
+            this.player.body.collideWorldBounds = true;
+            
+
+            var text_style = {
+                'font': "14px Arial",
+                'fill': 'white',
+                'align': 'left'
+            };
+
+            this.fps_text = game.add.text(10, 10, 'FPS: 0', text_style);
+            this.score_text = game.add.text(10, 28, 'Score: 0', text_style);
+            this.bullet_preload();
+        },
+        is_game_over: false,
+        game_over: function() {
+
+            this.is_game_over = true;
+            for (var type in this.enemies_by_type) {
+                this.enemies_by_type[type].destroy(true);
+                delete this.enemies_by_type[type];
+            }
+            
+            for (var type in this.powerups_by_type) {
+                this.powerups_by_type[type].destroy(true);
+                delete this.powerups_by_type[type];
+            }
+
+            this.projectiles.destroy(true);
+            this.explosions.destroy(true);
+            
+            
+            this.player_effects.destroy(true);
+
+            var stats = JSON.parse(JSON.stringify(this.stats));
+            var fps_total = 0;
+            stats.average_fps = stats.fps_snapshots.reduce(function(prev, cur) {
+                return prev + cur;
+            }) / stats.fps_snapshots.length;
+            
+            stats.played_time_seconds = (game.time.now - stats.startTime - stats.pausedTime) / 1000;
+            stats.paused_time_seconds = stats.pausedTime / 1000;
+            delete stats.pausedTime;
+            delete stats.startTime;
+            delete stats.fps_snapshots;
+            
             components.highscores.update(this.score, this.stats);
             components.highscores.render_scores();
 
