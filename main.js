@@ -808,7 +808,7 @@ require(['Phaser','Components','override'], function(Phaser, Components, overrid
             delete stats.startTime;
             delete stats.fps_snapshots;
             
-            components.highscores.update(this.score, this.stats);
+            components.highscores.update(this.score, stats);
             components.highscores.render_scores();
 
             var text_style = {
