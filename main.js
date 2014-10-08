@@ -1,11 +1,18 @@
 // 0.4 goals
+// Done
 // Resize
 // Emitter changes for player projectiles
-// New enemy type?
 // Spawn framework rework
-// Background - animated?
 // Make player a group to which effects are added
+// New enemy type?
+// Fix input issues upon impact
+// Corner camper discouragement
+
+// Not done
+
+// Background - animated?
 // Override changes
+
 // Stat reporting
 //  -Kills
 //  -Shots
@@ -34,7 +41,6 @@ var extend = function(base, extension) {
 require.config({
     paths: {
         'Phaser': 'phaser.min',
-        
         'Components': 'components'
     }
 });
@@ -245,6 +251,36 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 }
             }
         });
+        
+        enemies.stop_and_go = extend(components.enemy_controller, {
+            type: 'stop_and_go',
+            point_value: 8,
+            rotation: 10,
+            control_interval: 500,
+            spritelist: ['stopandgo'],
+            wait: 4,
+            init: function(sprite) {
+                this.animation = sprite.animations.add('throb', null, 4, true);
+            },
+            behavior: function(sprite) {
+                if (this.wait == 0) {
+                    this.animation.stop();
+                    if (game.rnd.integerInRange(0, 100) < 33) {
+                        game.physics.arcade.moveToObject(sprite, main.player, 550);
+                    } else {
+                        game.physics.arcade.moveToXY(sprite, game.rnd.integerInRange(0,GAME_WIDTH), game.rnd.integerInRange(0,GAME_HEIGHT), 550);
+                    }
+                    
+                    this.wait = game.rnd.integerInRange(3,8);
+                } else {
+                    this.animation.play();
+                    sprite.body.velocity.x = 0;
+                    sprite.body.velocity.y = 0;
+                    this.wait -= 1;
+                }
+            }
+        });
+        
         return enemies;
     };
     
@@ -288,9 +324,9 @@ require(['Phaser','Components'], function(Phaser, Components) {
         },
         25: {
             enemies: {
-                enemy1: timer_based_spawner_factory(25, 2000),
-                enemy2: timer_based_spawner_factory(10, 3000),
-                curver: timer_based_spawner_factory(20, 2000)
+                enemy1: timer_based_spawner_factory(20, 2500),
+                enemy2: timer_based_spawner_factory(8, 3500),
+                curver: timer_based_spawner_factory(15, 2500)
             },
             powerups: {
                 shot_damage_powerup: timer_based_spawner_factory(1, 40000),
@@ -314,10 +350,10 @@ require(['Phaser','Components'], function(Phaser, Components) {
         },
         80: {
             enemies: {  
-                centipede_part: timer_based_spawner_factory(25, 6000), // Every piece of a centipede counts for the check, so setting to 25 even though on average should amount to five complete 'pedes
+                centipede_part: timer_based_spawner_factory(25, 6000), 
                 enemy2: timer_based_spawner_factory(10, 3000),
-                curver: timer_based_spawner_factory(20, 2000),
-                bigenemy: timer_based_spawner_factory(4, 7000),
+                curver: timer_based_spawner_factory(15, 2500),
+                bigenemy: timer_based_spawner_factory(3, 10000),
             },
             powerups: {
                 shot_damage_powerup: timer_based_spawner_factory(1, 40000),
@@ -328,10 +364,26 @@ require(['Phaser','Components'], function(Phaser, Components) {
         },
         120: {
             enemies: {  
-                centipede_part: timer_based_spawner_factory(25, 6000), // Every piece of a centipede counts for the check, so setting to 25 even though on average should amount to five complete 'pedes
-                enemy2: timer_based_spawner_factory(15, 2000),
-                curver: timer_based_spawner_factory(20, 1000),
-                bigenemy: timer_based_spawner_factory(5, 7000),
+                centipede_part: timer_based_spawner_factory(25, 6000),
+                enemy2: timer_based_spawner_factory(10, 3000),
+                curver: timer_based_spawner_factory(10, 3000),
+                bigenemy: timer_based_spawner_factory(4, 7000),
+                stop_and_go: timer_based_spawner_factory(6, 4000)
+            },
+            powerups: {
+                shot_damage_powerup: timer_based_spawner_factory(1, 40000),
+                shield_powerup: timer_based_spawner_factory(3, 10000),
+                shot_speed_powerup: timer_based_spawner_factory(1, 120000),
+                accel_powerup: timer_based_spawner_factory(1, 120000)
+            }
+        },
+        150: {
+            enemies: {  
+                centipede_part: timer_based_spawner_factory(35, 8000),
+                enemy2: timer_based_spawner_factory(12, 3000),
+                curver: timer_based_spawner_factory(12, 3000),
+                bigenemy: timer_based_spawner_factory(6, 8000),
+                stop_and_go: timer_based_spawner_factory(8, 4000)
             },
             powerups: {
                 shot_damage_powerup: timer_based_spawner_factory(1, 40000),
@@ -359,6 +411,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
         enemy_spawn_timer: 0,
         powerup_spawn_timer: 0,
         spawn_timings: {},
+        corner_timer: null,
         accelerate: function(body, dimension, amount) {
             if (amount === undefined) {
                 amount = this.player_acceleration;
@@ -369,6 +422,10 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 } else {
                     body.velocity[dimension] = this.max_player_speed;
                 }      
+            }
+            else
+            {
+                body.velocity[dimension] = this.max_player_speed;
             }
         },
         decelerate: function(body, dimension, amount) {
@@ -381,6 +438,8 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 } else {
                     body.velocity[dimension] = this.max_player_speed * -1;
                 }
+            } else {
+                body.velocity[dimension] = this.max_player_speed * -1;
             }
         },
         bullet_preload: function() { // Biggest lag point is creating bullets and their emitters early in the game!
@@ -408,7 +467,6 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 
                 pew.kill();
             }
-            //this.projectiles.setAll('alive', false);
         },
         shoot: function(x, y) {
 
@@ -611,6 +669,9 @@ require(['Phaser','Components'], function(Phaser, Components) {
         },
         preload: function() {
             game.time.advancedTiming = true;
+            
+            game.load.image('background', 'assets/background.png');
+            game.load.image('retry', 'assets/retry.png');
             game.load.image('player', 'assets/player.png');
 
             game.load.image('projectile', 'assets/pew.png');
@@ -624,10 +685,10 @@ require(['Phaser','Components'], function(Phaser, Components) {
             game.load.image('greenarrow', 'assets/greenarrow.png');
             game.load.image('yellowarrow', 'assets/yellowarrow.png');
             game.load.image('shield_icon', 'assets/shield_icon.png');
-            game.load.image('player_effect_blue', 'assets/bluespriteeffect.png');
-            game.load.image('player_effect_green', 'assets/greenspriteeffect.png');
-            game.load.image('player_effect_yellow', 'assets/yellowspriteeffect.png');
-            game.load.image('player_effect_shield', 'assets/shield.png');
+            game.load.image('player_effect_blue', 'assets/player_effect_blue.png');
+            game.load.image('player_effect_green', 'assets/player_effect_green.png');
+            game.load.image('player_effect_yellow', 'assets/player_effect_yellow.png');
+            game.load.image('player_effect_shield', 'assets/player_effect_shield.png');
             
 
             game.load.image('splitdude','assets/split_dude.png');
@@ -639,10 +700,12 @@ require(['Phaser','Components'], function(Phaser, Components) {
             game.load.spritesheet('enemy6', 'assets/greensheet.png', 10, 10);
             game.load.spritesheet('bigenemy', 'assets/bigenemy_sheet.png', 35, 35);
             game.load.spritesheet('centipede_part','assets/centipede_sheet.png', 20, 20);
+            game.load.spritesheet('stopandgo','assets/stopandgo.png', 20, 20);
 
             game.load.image('touch_circle','assets/control_circle.png');
         },
         create: function() {
+            game.add.sprite(0,0,'background');
             components.highscores.init();
 
             // Mobile controls
@@ -676,7 +739,6 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
             this.player = game.add.sprite(200, 200, 'player');
             this.player.anchor.setTo(0.5, 0.5);
-
             game.physics.enable(this.player, Phaser.Physics.ARCADE);
             this.player.body.collideWorldBounds = true;
             
@@ -719,7 +781,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 'fill': 'blue',
                 'align': 'left'
             };
-            this.retry = game.add.text(250, 400, 'Retry', text_style);
+            this.retry = game.add.sprite(250, 300, 'retry');
 
             this.retry.inputEnabled = true;
 
@@ -747,6 +809,9 @@ require(['Phaser','Components'], function(Phaser, Components) {
             this.score = 0;
             this.spawn_chance = 5;
             this.score_text.text = 'Score: 0';
+            
+            this.spawn_timings = {};
+            this.corner_timer = null;
 
             this.player.reset(200, 200);
         },
@@ -772,11 +837,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
             this.player.angle += 15 * frames;
 
-            this.player_effects.forEach(function(effect) {
-                effect.x = _this.player.x;
-                effect.y = _this.player.y;
-                effect.angle += 20 * frames;
-            });
+            
             
             if (game.device.android) {
                 // process mobile controls
@@ -826,6 +887,18 @@ require(['Phaser','Components'], function(Phaser, Components) {
                     this.decelerate(this.player.body, 'y');
                 }
             }
+            
+            var offset = 20;
+            var ccw = 1;
+            this.player_effects.forEach(function(effect) {
+                effect.x = _this.player.x;
+                effect.y = _this.player.y;
+                effect.body.velocity.x = _this.player.body.velocity.x;
+                effect.body.velocity.y = _this.player.body.velocity.y;
+                effect.angle = _this.player.angle + offset * ccw;
+                offset += 20;
+                ccw *= -1;
+            });
 
             Object.keys(this.enemies_by_type).forEach(function(type) {
                 // Collide stuff
@@ -875,7 +948,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 game.physics.arcade.overlap(_this.player, _this.powerups_by_type[type], function(player, powerup) {
                     powerup.kill();
                     var new_effect = game.add.sprite(player.x, player.y, powerup.controller.player_effect);
-
+                    game.physics.enable(new_effect, game.physics.ARCADE);
                     new_effect.angle = _this.current_effect_offset;
                     new_effect.anchor.setTo(0.5, 0.5);
 
@@ -896,12 +969,45 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 this.random_powerup();
             }
             
+            //  Corner checker
+            if ( (this.player.x < 25 && this.player.y < 25) ||
+                (this.player.x > GAME_WIDTH - 25 && this.player.y < 25) ||
+                (this.player.x > GAME_WIDTH - 25 && this.player.y > GAME_HEIGHT - 25) ||
+                (this.player.x < 25 && this.player.y > GAME_HEIGHT -25)) {
+                
+                if (this.corner_timer === null) {
+                    this.corner_timer = game.time.now;
+                } else if (game.time.now - this.corner_timer > 12000) {
+                    this.spawn_corner_enemies();
+                    this.corner_timer += 2000;
+                }
+                
+            } else {
+                this.corner_timer = null;
+            }
             
 
-            this.spawn_chance = 5 + (Math.floor(this.score / 10));
+            
 
             this.last_frame_time = game.time.now;
 
+        },
+        spawn_corner_enemies: function() {
+            var num = game.rnd.integerInRange(5,8);
+            for (var i = 0; i < num; i++) {
+                if (this.player.x < 25) {
+                    var x = game.rnd.integerInRange(25,65);
+                } else {
+                    var x = game.rnd.integerInRange(GAME_WIDTH-65, GAME_WIDTH-25);
+                }
+                
+                if (this.player.y < 25) {
+                    var y = game.rnd.integerInRange(0,65);
+                } else {
+                    var y = game.rnd.integerInRange(GAME_HEIGHT-65, GAME_HEIGHT);
+                }
+                this.create_enemy('stop_and_go', x, y).controller.wait = 0;
+            }
         }
     };
 
