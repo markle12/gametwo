@@ -41,11 +41,12 @@ var extend = function(base, extension) {
 require.config({
     paths: {
         'Phaser': 'phaser.min',
-        'Components': 'components'
+        'Components': 'components',
+        'override': 'override'
     }
 });
 
-require(['Phaser','Components'], function(Phaser, Components) {
+require(['Phaser','Components','override'], function(Phaser, Components, override) {
     var posneg = function() {
         return game.rnd.integerInRange(0,10) > 5 ? -1 : 1;
     };
@@ -394,10 +395,20 @@ require(['Phaser','Components'], function(Phaser, Components) {
         }
     };
     
-
     var main = {
+        stats: {
+           fps_snapshots: [],
+           shots: 0,
+           hits: 0,
+           powerups: 0,
+           kills: 0,
+           enemies_spawned: 0,
+           collisions: 0,
+           startTime: 0,
+           pauses: 0,
+           pausedTime: 0
+        },
         spawn_chance: 5,
-        kills: 0,
         score: 0,
         shot_damage: 1,
         max_player_speed: 150,
@@ -412,6 +423,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
         powerup_spawn_timer: 0,
         spawn_timings: {},
         corner_timer: null,
+        snapshot_timer: 0,
         accelerate: function(body, dimension, amount) {
             if (amount === undefined) {
                 amount = this.player_acceleration;
@@ -520,7 +532,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
                     game.physics.arcade.moveToXY(pew, x, y, this.shot_speed);
                 }
 
-
+                this.stats.shots += 1;
                 this.next_shot = game.time.now + this.shot_cooldown;
             }
         },
@@ -571,6 +583,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
             this.powerup_spawn_timer = game.time.now;
         },
         create_enemy: function(type, x, y, init_options) {
+            this.stats.enemies_spawned += 1;
             var _this = this;
             // do check recycle in this.enemies_by_type
             if (this.enemies_by_type[type] !== undefined && this.enemies_by_type[type].countDead() > 0) {
@@ -705,6 +718,16 @@ require(['Phaser','Components'], function(Phaser, Components) {
             game.load.image('touch_circle','assets/control_circle.png');
         },
         create: function() {
+            this.stats.startTime = game.time.now;
+            
+            game.onPause.add(function() {
+                main.stats.pauses += 1;
+            });
+
+            game.onResume.add(function() {
+                main.stats.pausedTime += game.time.pausedTime;
+            });
+
             game.add.sprite(0,0,'background');
             components.highscores.init();
 
@@ -773,7 +796,19 @@ require(['Phaser','Components'], function(Phaser, Components) {
             
             this.player_effects.destroy(true);
 
-            components.highscores.update(this.score);
+            var stats = JSON.parse(JSON.stringify(this.stats));
+            var fps_total = 0;
+            stats.average_fps = stats.fps_snapshots.reduce(function(prev, cur) {
+                return prev + cur;
+            }) / stats.fps_snapshots.length;
+            
+            stats.played_time_seconds = (game.time.now - stats.startTime - stats.pausedTime) / 1000;
+            stats.paused_time_seconds = stats.pausedTime / 1000;
+            delete stats.pausedTime;
+            delete stats.startTime;
+            delete stats.fps_snapshots;
+            
+            components.highscores.update(this.score, this.stats);
             components.highscores.render_scores();
 
             var text_style = {
@@ -789,7 +824,13 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
         },
         reset: function() {
-            
+            for (var stat in this.stats) {
+                if (typeof(stat) == 'number') {
+                    this.stats[stat] = 0;
+                } else {
+                    this.stats[stat] = [];
+                }
+            }
             
             for (var powerup in powerup_types) {
                 this[powerup_types[powerup].property] = this[powerup_types[powerup].property+'_default'];
@@ -807,13 +848,14 @@ require(['Phaser','Components'], function(Phaser, Components) {
 
             this.kills = 0;
             this.score = 0;
-            this.spawn_chance = 5;
+       
             this.score_text.text = 'Score: 0';
             
             this.spawn_timings = {};
             this.corner_timer = null;
 
             this.player.reset(200, 200);
+            this.stats.startTime = game.time.now;
         },
         go_fullscreen: function() {
             game.scale.fullScreenScaleMode = Phaser.ScaleManager.SHOW_ALL;
@@ -905,12 +947,17 @@ require(['Phaser','Components'], function(Phaser, Components) {
                 game.physics.arcade.collide(_this.projectiles, _this.enemies_by_type[type], function(projectile, enemy) {
                     projectile.kill();
                     _this.explode_at(enemy.x, enemy.y);
-
+                    
+                    _this.stats.hits += 1;
                     enemy.damage(_this.shot_damage);
+                    if (enemy.alive !== true) {
+                        _this.stats.kills += 1;
+                    }
                 });
 
                 game.physics.arcade.collide(_this.player, _this.enemies_by_type[type], function(player, enemy) {
                     if (_this.player.alive) {
+                        _this.stats.collisions += 1;
                         if (_this.shield_points < 1) {
                             _this.player.kill();
                             _this.explode_at(_this.player.x, _this.player.y);
@@ -946,6 +993,7 @@ require(['Phaser','Components'], function(Phaser, Components) {
             
             Object.keys(this.powerups_by_type).forEach(function(type) {
                 game.physics.arcade.overlap(_this.player, _this.powerups_by_type[type], function(player, powerup) {
+                    _this.stats.powerups += 1;
                     powerup.kill();
                     var new_effect = game.add.sprite(player.x, player.y, powerup.controller.player_effect);
                     game.physics.enable(new_effect, game.physics.ARCADE);
@@ -988,7 +1036,10 @@ require(['Phaser','Components'], function(Phaser, Components) {
             
 
             
-
+            if (game.time.now - 1000 > this.snapshot_timer) {
+                this.stats.fps_snapshots.push(game.time.fps);
+                this.snapshot_timer = game.time.now;
+            }
             this.last_frame_time = game.time.now;
 
         },
@@ -1016,12 +1067,17 @@ require(['Phaser','Components'], function(Phaser, Components) {
     };
 
     game = new Phaser.Game(GAME_WIDTH, GAME_HEIGHT, Phaser.CANVAS, 'gameDiv');
+    
+    components = Components(game);
+    override(game, components);
+    
     game.state.add('main', main);
     
     game.state.start('main');
     
+    
 
-    components = Components(game);
+    
     enemies = enemies_setup();
     
 });

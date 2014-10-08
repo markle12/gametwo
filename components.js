@@ -82,7 +82,7 @@ define('Components', function() {
                     }
                 }
             },
-            update: function(score) {
+            update: function(score, stats) {
                 var date = new Date();
                 var datestring = date.toLocaleDateString() + ' '+date.toLocaleTimeString();
                 this.scores.score_history.push({score: score, date: datestring});
