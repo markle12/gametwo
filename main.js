@@ -874,8 +874,8 @@ require(['Phaser','Components','override'], function(Phaser, Components, overrid
 
             var _this = this;     
 
-            var frame_delta = game.time.now - this.last_frame_time;
-            var frames = frame_delta / (1000 / 60); // Pretending 60fps
+            
+            var frames = game.time.elapsed / (1000 / 60); // Pretending 60fps
 
             this.player.angle += 15 * frames;
 
@@ -914,19 +914,19 @@ require(['Phaser','Components','override'], function(Phaser, Components, overrid
                 }
 
                 if (game.input.keyboard.isDown(KEYCODE_A)) {
-                    this.decelerate(this.player.body, 'x');
+                    this.decelerate(this.player.body, 'x', this.player_acceleration * frames);
                 }
 
                 if (game.input.keyboard.isDown(KEYCODE_D)) {
-                    this.accelerate(this.player.body, 'x');
+                    this.accelerate(this.player.body, 'x', this.player_acceleration * frames);
                 }
 
                 if (game.input.keyboard.isDown(KEYCODE_S)) {
-                    this.accelerate(this.player.body, 'y');
+                    this.accelerate(this.player.body, 'y', this.player_acceleration * frames);
                 }
 
                 if (game.input.keyboard.isDown(KEYCODE_W)) {
-                    this.decelerate(this.player.body, 'y');
+                    this.decelerate(this.player.body, 'y', this.player_acceleration * frames);
                 }
             }
             
@@ -1040,8 +1040,6 @@ require(['Phaser','Components','override'], function(Phaser, Components, overrid
                 this.stats.fps_snapshots.push(game.time.fps);
                 this.snapshot_timer = game.time.now;
             }
-            this.last_frame_time = game.time.now;
-
         },
         spawn_corner_enemies: function() {
             var num = game.rnd.integerInRange(5,8);
